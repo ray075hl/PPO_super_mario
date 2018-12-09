@@ -11,10 +11,15 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
 
+from collections import deque
 
 DEBUG = False
 use_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if use_cuda else 'cpu')
+
+def sample(logits):
+    uniform = np.random.uniform(size=logits.shape)
+    return np.argmax(logits - np.log(-np.log(uniform)), axis=-1)
 
 def compute_gae(next_value, rewards, masks, values, gamma=0.99, tau=0.95):
     values = values + [next_value]
@@ -37,117 +42,35 @@ def ppo_iter(mini_batch_size, states, actions, log_probs, returns, advantage):
                                                                                                        rand_ids, :]
 
 
-def ppo_update(ppo_epochs, mini_batch_size, states, actions, log_probs, returns, advantages, clip_param=0.2):
+def ppo_update(ppo_epochs, mini_batch_size, states, actions, log_probs, returns, advantages, clip_param=0.1):
     for _ in range(ppo_epochs):
         for state, action, old_log_probs, return_, advantage in ppo_iter(mini_batch_size, states, actions, log_probs,
                                                                        returns, advantages):
-            # advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-5)
-            dist, value = model(state)
-            prob = F.softmax(dist, dim=-1)
-            log_prob_ = F.log_softmax(dist, dim=-1)
-            entropy = (prob*(-1.0*log_prob_)).mean()
-            new_log_probs = F.log_softmax(dist, dim=1) #dist.log_prob(action)
+            
+            pi, value = model(state)
+            prob = F.softmax(pi, dim=-1)
+            log_prob = F.log_softmax(pi, dim=-1)
+            action_prob = prob.gather(1, action)
+            
 
+            action_prob_old = old_log_probs.exp().gather(1, action)
+            
+            ratio = action_prob / (action_prob_old + 1e-10)
 
-            ratio = (new_log_probs[range(mini_batch_size), action.squeeze()] - old_log_probs[range(mini_batch_size), action.squeeze()]).exp()
+            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-5)
+
             surr1 = ratio * advantage
-            surr2 = torch.clamp(ratio, 1.0 - clip_param, 1.0 + clip_param) * advantage
+            surr2 = torch.clamp(ratio, min=1. - clip_param, max=1. + clip_param) * advantage
 
-            actor_loss =  -torch.min(surr1, surr2).mean()
-            critic_loss = (return_ - value).pow(2).mean()
-            #print('critic_loss: {}, actor_loss: {}, entropy_loss: {}'.format(critic_loss, actor_loss, entropy))
-            loss = 0.5*critic_loss + actor_loss - 0.001 * entropy
+            policy_loss = -torch.min(surr1, surr2).mean()
+            value_loss = (return_ - value).pow(2).mean()
+            entropy_loss = (prob * log_prob).sum(1).mean()
+            loss = policy_loss + 0.01 * entropy_loss + 0.5*value_loss #+ policy_loss - 0.01 * entropy_loss
 
             optimizer.zero_grad()
             loss.backward()
             clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
-
-# class Game:
-#
-#     def __init__(self, seed: int):
-#         # Breakout actions = ['noop', 'fire', 'right', 'left']
-#         self.env = gym.make('BreakoutNoFrameskip-v4')
-#
-#         self.env.seed(seed)
-#
-#         self.obs_2_max = np.zeros((2, 1, 84, 84), np.uint8)
-#
-#         self.obs_4 = np.zeros((4, 84, 84))
-#
-#         self.rewards = []
-#
-#         self.lives = 0
-#
-#     def step(self, action):
-#         reward = 0
-#         done = None
-#
-#         # Each 4 frames take the same action
-#         for i in range(4):
-#             # obs is rgb picture
-#             obs, r, done, info = self.env.step(action)
-#
-#             if i >= 2:
-#                 self.obs_2_max[i % 2] = self._process_obs(obs)
-#
-#             reward += r
-#
-#             lives = self.env.unwrapped.ale.lives()
-#
-#             if lives < self.lives:
-#                 done = True
-#
-#             self.lives = lives
-#
-#             # Game Over!
-#             if done:
-#                 break
-#
-#         self.rewards.append(reward)
-#
-#         # Game Over!
-#         if done:
-#
-#             episode_info = {"reward": sum(self.rewards),
-#                             "length": len(self.rewards)}
-#
-#             self.reset()
-#         else:
-#             episode_info = None
-#
-#             obs = self.obs_2_max.max(axis=0)
-#             # cv2.imwrite('xxx.png', obs.transpose(1,2,0))
-#
-#             self.obs_4 = np.roll(self.obs_4, shift=-1, axis=0)
-#             self.obs_4[-1:, ...] = obs
-#
-#         return self.obs_4, reward, done, episode_info
-#
-#
-#     def reset(self):
-#
-#         self.env.reset()
-#         obs, _, done, _ = self.env.step(1)  # 1 is fire button : signal of game begin
-#         # self.obs_4 = np.zeros((4, 84, 84))
-#         obs = self._process_obs(obs)
-#         self.obs_4[0:, ...] = obs
-#         self.obs_4[1:, ...] = obs
-#         self.obs_4[2:, ...] = obs
-#         self.obs_4[3:, ...] = obs
-#
-#         self.lives = self.env.unwrapped.ale.lives()
-#
-#         return self.obs_4
-#
-#     @staticmethod
-#     def _process_obs(obs):
-#
-#         obs = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
-#         obs = cv2.resize(obs, (84, 84), interpolation=cv2.INTER_AREA)
-#         return obs[None, :, :]
-
-
 class Game(object):
 
 
@@ -226,7 +149,7 @@ class Game(object):
 
 
         obs = self.env.reset()
-        obs, _, _, _ = self.env.step(1)
+        # obs, _, _, _ = self.env.step(1)
 
         obs = self._process_obs(obs)
 
@@ -242,16 +165,86 @@ class Game(object):
 
 
 
-
     @staticmethod
     def _process_obs(obs):
-
-
 
         obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
         obs = cv2.resize(obs, (84, 84), interpolation=cv2.INTER_AREA)
         return obs[:, :, None]  # Shape (84, 84, 1)
 
+class Game(object):
+
+    def __init__(self, seed: int):
+        self.env = gym.make('BreakoutNoFrameskip-v4')
+        self.env.seed(seed)
+
+        self.obs_2_max = np.zeros((2, 84, 84, 1), np.uint8)
+
+
+        self.obs_4 = np.zeros((84, 84, 4))
+        self.rewards = []
+        self.lives = 0
+
+    def step(self, action):
+        reward = 0.
+        done = None
+
+
+
+        for i in range(4):
+
+            obs, r, done, info = self.env.step(action)
+            if i >= 2:
+                self.obs_2_max[i % 2] = self._process_obs(obs)
+
+            reward += r
+            lives = self.env.unwrapped.ale.lives()
+
+            if lives < self.lives:
+                done = True
+            self.lives = lives
+
+            if done:
+                break
+
+        self.rewards.append(reward)
+
+        if done:
+            episode_info = {"reward": sum(self.rewards),
+                            "length": len(self.rewards)}
+            self.reset()
+        else:
+            episode_info = None
+
+            obs = self.obs_2_max.max(axis=0)
+
+            self.obs_4 = np.roll(self.obs_4, shift=-1, axis=-1)
+            self.obs_4[..., -1:] = obs
+
+        return self.obs_4, reward, done, episode_info
+
+    def reset(self):
+
+        obs = self.env.reset()
+        # obs, _, _, _ = self.env.step(1)    # fire button is signal of game begin
+
+        obs = self._process_obs(obs)
+        self.obs_4[..., 0:] = obs
+        self.obs_4[..., 1:] = obs
+        self.obs_4[..., 2:] = obs
+        self.obs_4[..., 3:] = obs
+        self.rewards = []
+
+        self.lives = self.env.unwrapped.ale.lives()
+
+        return self.obs_4
+
+    @staticmethod
+    def _process_obs(obs):
+
+        obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
+        obs = cv2.resize(obs, (84, 84), interpolation=cv2.INTER_AREA)
+        return obs[:, :, None]  # Shape (84, 84, 1)
 
 
 def worker_process(remote,
@@ -320,6 +313,7 @@ class Model(nn.Module):
         conv_out = self.conv(fx).view(fx.size()[0],-1)
         return self.policy(conv_out), self.value(conv_out)
 
+
 def play_game(net, game_: Game, visual=False):
 
     state = game_.reset()
@@ -348,13 +342,13 @@ if __name__ == '__main__':
 
     total_rewards_list = []
     action_space = 4
-    lr = 0.0001
+    lr = 0.00025
     gamma_ = 0.99
     lambda_ = 0.95
 
     updates = 10000
 
-    ppo_epochs = 4
+    ppo_epochs = 3
     n_workers = 8
     num_steps = 128
     n_mini_batch = 128
@@ -369,6 +363,10 @@ if __name__ == '__main__':
     workers = [Worker(1111+i) for i in range(n_workers)]
 
     state = np.zeros((n_workers, 84, 84, 4), dtype=np.uint8)
+
+    reward_queue = deque(maxlen=100)
+    length_queue = deque(maxlen=100)
+
     for worker in workers:
         worker.child.send(('reset', None))
     for i, worker in enumerate(workers):
@@ -376,7 +374,7 @@ if __name__ == '__main__':
     state = state.transpose(0, 3, 1, 2)
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
-    max_frames = 100000
+    max_frames = 10000000
     frame_idx = 0
     solved = False
     try:
@@ -400,10 +398,13 @@ if __name__ == '__main__':
                 log_prob = F.log_softmax(logits, dim=-1)
                 log_probs.append(log_prob)
 
-                for i in range(len(prob)):
-                    action = np.random.choice(action_space, p=prob.cpu().detach().numpy()[i])
-                    action_list.append(action)
-                # print(action_list)
+                #for i in range(len(prob)):
+                #    action = np.random.choice(action_space, p=prob.cpu().detach().numpy()[i])
+                #    action_list.append(action)
+                # action_list = sample(logits.cpu().detach().numpy())
+                u = torch.rand(logits.size()).to(device)
+                _, action= torch.max(logits.detach()-(-u.log()).log(), 1)
+                action_list = action.cpu().detach().numpy()
                 # print()
 
                 for i, worker in enumerate(workers):
@@ -415,8 +416,12 @@ if __name__ == '__main__':
                     next_state_, reward_, done_, info = worker.child.recv()
                     next_state_ = next_state_.transpose(2, 0, 1)
                     next_state.append(next_state_[np.newaxis,...])
-                    reward.append(reward_)
+                    reward.append(reward_)                   
                     done.append(done_)
+
+                    if done_:
+                        reward_queue.append(info['reward'])
+                        length_queue.append(info['length'])
 
                 next_state = np.concatenate(next_state, axis=0)
                 reward = np.asarray(reward)
@@ -435,18 +440,20 @@ if __name__ == '__main__':
                 states.append(state)
                 actions.append(torch.from_numpy(np.asarray(action_list)).unsqueeze(1).to(device))
                 state = next_state  # -----------------
-            frame_idx += 1
+                frame_idx += 1
 
-            if frame_idx % 1 == 0:
-
-                game_test = Game(random.randint(10000,20000))
-                current = play_game(model, game_test)
-                total_rewards_list.append(current)
-                mean_last100 = sum(total_rewards_list[-100:])/len(total_rewards_list[-100:])
-                print('frame_idx: {} \t mean_last100: {} \t current: {}'.format(frame_idx, mean_last100, current))
-                if mean_last100 > 100:
-                    solved = True
-
+            # if frame_idx % 1 == 0:
+            #
+            #     game_test = Game(random.randint(10000,20000))
+            #     current = play_game(model, game_test)
+            #     total_rewards_list.append(current)
+            #     mean_last100 = sum(total_rewards_list[-100:])/len(total_rewards_list[-100:])
+            #     print('frame_idx: {} \t mean_last100: {} \t current: {}'.format(frame_idx, mean_last100, current))
+            #     if mean_last100 > 100:
+            #         solved = True
+            print("frame id: {} \t mean reward: {:3f} \t length: {}".format(frame_idx,
+                                                                            sum(reward_queue)/len(reward_queue),
+                                                                            sum(length_queue)/len(length_queue)))
             next_state = torch.FloatTensor(next_state).to(device)
             _, next_value = model(next_state)
 
@@ -468,6 +475,7 @@ if __name__ == '__main__':
         # End all process
         for w in workers:
             w.child.send(("close", None))
+
 
 
 
