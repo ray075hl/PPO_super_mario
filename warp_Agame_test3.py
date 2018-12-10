@@ -351,7 +351,7 @@ if __name__ == '__main__':
     ppo_epochs = 3
     n_workers = 8
     num_steps = 128
-    n_mini_batch = 128
+    n_mini_batch = 4
 
     batch_size = n_workers * num_steps
 
