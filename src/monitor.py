@@ -14,7 +14,7 @@ class Monitor:
                 '-vcodec','rawvideo',
                 '-s', '{}X{}'.format(width, height), # size of one frame
                 '-pix_fmt', 'rgb24',
-                '-r', '60', # frames per second
+                '-r', '24', # frames per second
                 '-i', '-', # The imput comes from a pipe
                 '-an', # Tells FFMPEG not to expect any audio
                 '-vcodec', 'mpeg4',
