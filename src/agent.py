@@ -216,10 +216,11 @@ class Agent:
             if current_update_times % save_model_steps == 0:
                 self.save_model(current_update_times)
 
-            print("Update step: [{}/{}] \t mean reward: {:3f} \t length: {}".
-                  format(current_update_times, max_update_times,
-                         sum(reward_queue)/len(reward_queue),
-                         sum(length_queue) / len(length_queue)))
+            if len(length_queue) != 0:
+                print("Update step: [{}/{}] \t mean reward: {:3f} \t length: {}".
+                      format(current_update_times, max_update_times,
+                             sum(reward_queue)/len(reward_queue),
+                             sum(length_queue) / len(length_queue)))
             # ------------------------------------
 
             if not constant_lr:

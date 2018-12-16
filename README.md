@@ -5,24 +5,31 @@ Play game super mario using Proximal Policy Optimization method.
 
 ## Setup
 
-Tested environments is Ubuntu16.04 and Python3.6,  Pytorch>=0.4.0
+Tested environments is Ubuntu16.04 and Python3.6,  Pytorch>=0.4.0.
 
-Other requirements package 
+Other requirements package. 
 
 ```
 pip install -r requirements.txt
 ```
+
+Save video need install ffmpeg.
 
 **Usage**
 
 ```bash
 # Train a agent from scratch
 python run.py train	
+```
+
+Download pre-trained model from [here](https://drive.google.com/file/d/1xUITZZ9u68XE3cufPSNhZAM0gyNDdqj2/view?usp=sharing).
+
+```bash
 # Play game with a trained model
 python run.py play ./pre_trained_model/mario_10000-best.dat
 ```
 
-Train processing take about 5 hours when I use nvidia-V100(1GPU, 16 parallel game envs), rewards reach about 200.0, game length 275 steps. 
+Training processing takes about 5 hours when I use nvidia-V100(1GPU, 16 parallel game envs), rewards will reach about 200.0 and game length 275 steps. It look like below when model converge. 
 
 ![](./demo.gif)
 
