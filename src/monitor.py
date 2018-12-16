@@ -1,8 +1,14 @@
 import subprocess as sp
 import numpy as np
+import platform
 
 
-FFMPEG_BIN = 'ffmpeg'
+system_info = platform.platform()
+
+if system_info[:3] == 'Win':
+    FFMPEG_BIN = 'ffmpeg.exe'
+else:
+    FFMPEG_BIN = 'ffmpeg'
 
 
 class Monitor:
@@ -19,9 +25,12 @@ class Monitor:
                 '-an', # Tells FFMPEG not to expect any audio
                 '-vcodec', 'mpeg4',
                 save_path ]
-
-        self.pipe = sp.Popen( self.command, stdin=sp.PIPE, stderr=sp.PIPE)
-
+        try:
+            self.pipe = sp.Popen( self.command, stdin=sp.PIPE, stderr=sp.PIPE)
+        except FileNotFoundError:
+            print('*'*50)
+            print('Can not find ffmpeg, please set right path of it.')
+            print('*'*50)		
     def record(self, image_array):
         self.pipe.stdin.write( image_array.tostring() )
 

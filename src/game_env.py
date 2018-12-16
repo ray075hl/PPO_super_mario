@@ -38,6 +38,7 @@ class Game:
             obs, r, done, info = self.env.step(action)
 
             if self.mode == 'play':
+                print('Take Action: \t', COMPLEX_MOVEMENT[action])
                 self.monitor.record(obs)
 
             if i >= 2:

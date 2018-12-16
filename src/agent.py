@@ -244,7 +244,7 @@ class Agent:
             logits, _ = self.policy(state)
 
             action = self.choose_action(logits, noise_action=False)
-
+            
             next_state, reward, done, info = game.step(action, save_video)
 
             state = next_state
