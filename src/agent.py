@@ -9,10 +9,12 @@ from collections import deque
 
 
 from src.game_env import *
+from src.ppo import *
+import src.utils as utils
 
 
 is_cuda = torch.cuda.is_available()
-device = 'gpu' if is_cuda else 'cpu'
+device = 'cuda' if is_cuda else 'cpu'
 
 
 class Net(nn.Module):
@@ -56,7 +58,7 @@ class Agent:
 
     def __init__(self, obs_shape, action_space):
 
-        self.policy = Net(obs_shape, action_space)
+        self.policy = Net(obs_shape, action_space).to(device)
 
 
     def choose_action(self, logits, noise_action=True):
@@ -79,7 +81,7 @@ class Agent:
                     num_workers=16,
                     mini_epochs=3,
                     gamma_=0.99,
-                    lambda_=0.95,
+                    tau_=0.95,
                     initial_lr=1e-4,
                     constant_lr=False,
                     max_update_times=10000,
@@ -129,53 +131,101 @@ class Agent:
 
             # ------------------------------------
             # interact with env and generate data
+            log_probs = []
+            values = []
             rewards = []
             actions = []
             states = []
-
-            logits, _ = self.policy(state)
-            action = self.choose_action(logits)
+            masks = []
 
 
-            for worker in workers:
-                worker.child.send('step', action)
-            actions.append(action)
+            for _ in range(num_steps):
+
+                state = torch.FloatTensor(state).to(device)
+                logits, value = self.policy(state)
+                # +++++
+                values.append(value)
+
+                action_this_step = self.choose_action(logits)
+                action_this_step = action_this_step.cpu().detach().numpy()
+                # +++++
+                actions.append(torch.from_numpy(np.asarray(action_this_step)).unsqueeze(1).to(device))
 
 
+                prob = F.softmax(logits, dim=-1)
+                log_prob = F.log_softmax(logits, dim=-1)
+                # +++++
+                log_probs.append(log_prob)
+
+                # Interact with environments
+                for i, worker in enumerate(workers):
+                    worker.child.send(('step', action_this_step[i]))
+                next_state = []
+                reward = []
+                done = []
+
+                for w, worker in enumerate(workers):
+                    next_state_, reward_, done_, info = worker.child.recv()
+                    next_state_ = next_state_.transpose(2, 0, 1)
+                    next_state.append(next_state_[np.newaxis, ...])
+                    reward.append(reward_)
+                    done.append(done_)
+
+                    if info:
+                        reward_queue.append(info['reward'])
+                        length_queue.append(info['length'])
+
+                next_state = np.concatenate(next_state, axis=0)
+                reward = np.asarray(reward)
+                done = np.asarray(done)
+
+                # +++++
+                rewards.append(torch.FloatTensor(reward).unsqueeze(1).to(device))  # 2D list
+                # +++++
+                masks.append(torch.FloatTensor(1 - done).unsqueeze(1).to(device))  # 2D list
+                # +++++
+                states.append(state)
+
+                state = next_state
+
+            current_update_times += 1
             # ------------------------------------
 
 
+            #  Update parameters
+            #  Change numpy to pytorch tensor and reshape
+            next_state = torch.FloatTensor(next_state).to(device)
+            _, next_value = self.policy(next_state)
+
+            returns = compute_gae(next_value, rewards, masks, values, gamma=gamma_, tau=tau_)
+            returns = torch.cat(returns).detach()
+
+            log_probs = torch.cat(log_probs).detach()
+            values = torch.cat(values).detach()
+
+            states = torch.cat(states)
+            actions = torch.cat(actions)
+            advantages = returns - values  # target_reward - predict_reward
+
+            clip_p = 0.2 * (1 - current_update_times / max_update_times)
+            ppo_update(self.policy, optimizer, mini_epochs, mini_batch_size,
+                       states, actions, log_probs, returns, advantages, clip_param=clip_p)
             # ------------------------------------
-            #  update parameters
 
-
-
-            # ------------------------------------
-
-
-
-
-            # ------------------------------------
             # save model and print information
+            if current_update_times % save_model_steps == 0:
+                self.save_model(current_update_times)
 
+            print("Update step: [{}/{}] \t mean reward: {:3f} \t length: {}".
+                  format(current_update_times, max_update_times,
+                         sum(reward_queue)/len(reward_queue),
+                         sum(length_queue) / len(length_queue)))
             # ------------------------------------
 
+            if not constant_lr:
+                utils.adjust_learning_rate(optimizer, initial_lr, max_update_times, current_update_times)
 
-            pass
-
-
-
-
-
-
-        # if not constant_lr:
-        #     lr = adjust_learning_rate(optimizer, initial_lr, max_update_times, current_update_times)
-
-
-
-
-
-
+    # Play game with model
     def play(self, model_path, game, visual=True, save_video=True):
 
         self.policy.load_state_dict(torch.load(model_path, map_location='cpu'))
@@ -189,8 +239,8 @@ class Agent:
 
             if visual:
                 game.env.render()
-
-            logits, _ = self.policy(state.transpose(2, 0, 1)).unsqueeze(0).to(device)
+            state = torch.FloatTensor(state.transpose(2, 0, 1)).unsqueeze(0).to(device)
+            logits, _ = self.policy(state)
 
             action = self.choose_action(logits, noise_action=False)
 
@@ -213,6 +263,6 @@ class Agent:
 # Unit test
 if __name__ == '__main__':
     input_shape = (4, 84, 84)
-    action_shape = 7
+    action_shape = 12
     model = Net(input_shape, action_shape)
 

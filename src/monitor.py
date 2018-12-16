@@ -6,7 +6,7 @@ FFMPEG_BIN = 'ffmpeg'
 
 
 class Monitor:
-    def __init__(self, width, height, save_path='output_video.mp4'):
+    def __init__(self, width, height, save_path='./saved_video/output_video.mp4'):
         
         self.command = [ FFMPEG_BIN,
                 '-y', # (optional) overwrite output file if it exists

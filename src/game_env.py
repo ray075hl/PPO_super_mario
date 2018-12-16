@@ -7,18 +7,18 @@ import random
 
 from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
 import gym_super_mario_bros
-from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
+from gym_super_mario_bros.actions import COMPLEX_MOVEMENT
 
 from src.monitor import Monitor
 
 class Game:
 
-    def __init__(self, game_id, obs_size, skip_frame=4):
-
+    def __init__(self, game_id, obs_size, skip_frame=4, mode='train'):
+        self.game_id = game_id
         env = gym_super_mario_bros.make(game_id)
         temp_obs = env.reset()
         height, width, _ = temp_obs.shape
-        self.env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
+        self.env = BinarySpaceToDiscreteSpaceEnv(env, COMPLEX_MOVEMENT)
 
         self.obs_last2max = np.zeros((2, obs_size, obs_size, 1), np.uint8)
 
@@ -26,8 +26,9 @@ class Game:
         self.rewards = []
         self.lives = 3
         self.skip = skip_frame
-
-        self.monitor = Monitor(width=width, height=height)
+        self.mode = mode
+        if self.mode == 'play':
+            self.monitor = Monitor(width=width, height=height)
 
     def step(self, action, monitor=False):
         reward = 0.0
@@ -36,11 +37,11 @@ class Game:
         for i in range(self.skip):
             obs, r, done, info = self.env.step(action)
 
-            if monitor:
+            if self.mode == 'play':
                 self.monitor.record(obs)
 
             if i >= 2:
-                self.obs_last2max[i % 2] = self._pocess_obs(obs)
+                self.obs_last2max[i % 2] = self._process_obs(obs)
 
             # super mario's reward is cliped in [-15.0, 15.0]
             reward += r / 15.0
@@ -74,15 +75,15 @@ class Game:
         obs = self.env.reset()
 
         obs = self._process_obs(obs)
-        self.obs_4[..., 0:] = obs
-        self.obs_4[..., 1:] = obs
-        self.obs_4[..., 2:] = obs
-        self.obs_4[..., 3:] = obs
+        self.obstack[..., 0:] = obs
+        self.obstack[..., 1:] = obs
+        self.obstack[..., 2:] = obs
+        self.obstack[..., 3:] = obs
         self.rewards = []
 
         self.lives = 3
 
-        return self.obs_4
+        return self.obstack
 
     @staticmethod
     def _process_obs(obs):
