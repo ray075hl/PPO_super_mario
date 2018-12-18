@@ -49,7 +49,7 @@ class Net(nn.Module):
         return int(np.prod(o.size()))
 
     def forward(self, x):
-        fx = x.float() / 256
+        fx = x.float() / 255
         conv_out = self.conv(fx).view(fx.size()[0], -1)
         return self.policy(conv_out), self.value(conv_out)
 
@@ -225,6 +225,10 @@ class Agent:
 
             if not constant_lr:
                 utils.adjust_learning_rate(optimizer, initial_lr, max_update_times, current_update_times)
+        
+        # Close each worker when training end.
+        for w in workers:
+            w.child.send(("close", None))
 
     # Play game with model
     def play(self, model_path, game, visual=True, save_video=True):
