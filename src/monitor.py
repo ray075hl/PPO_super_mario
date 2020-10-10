@@ -4,7 +4,7 @@ import platform
 
 
 system_info = platform.platform()
-
+print(system_info)
 if system_info[:3] == 'Win':
     FFMPEG_BIN = 'ffmpeg.exe'
 else:
@@ -14,7 +14,7 @@ else:
 class Monitor:
     def __init__(self, width, height, save_path='./saved_video/output_video.mp4'):
         
-        self.command = [ FFMPEG_BIN,
+        self.command = [ "D://Program Files//ffmpeg//bin//ffmpeg.exe",
                 '-y', # (optional) overwrite output file if it exists
                 '-f', 'rawvideo',
                 '-vcodec','rawvideo',

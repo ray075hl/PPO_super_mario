@@ -5,7 +5,7 @@ import cv2
 
 import random
 
-from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
+from nes_py.wrappers import JoypadSpace #as BinarySpaceToDiscreteSpaceEnv
 import gym_super_mario_bros
 from gym_super_mario_bros.actions import COMPLEX_MOVEMENT
 
@@ -18,19 +18,20 @@ class Game:
         env = gym_super_mario_bros.make(game_id)
         temp_obs = env.reset()
         height, width, _ = temp_obs.shape
-        self.env = BinarySpaceToDiscreteSpaceEnv(env, COMPLEX_MOVEMENT)
+        self.env = JoypadSpace(env, COMPLEX_MOVEMENT)
 
         self.obs_last2max = np.zeros((2, obs_size, obs_size, 1), np.uint8)
 
         self.obstack = np.zeros((obs_size, obs_size, 4))
         self.rewards = []
-        self.lives = 3
+        self.lives = 2
         self.skip = skip_frame
         self.mode = mode
         if self.mode == 'play':
             self.monitor = Monitor(width=width, height=height)
 
     def step(self, action, monitor=False):
+        print(self.lives)
         reward = 0.0
         done = False
 
@@ -49,8 +50,9 @@ class Game:
             lives = info['life']
 
             if lives < self.lives:
+                print(lives, self.lives)
                 done = True
-
+            print(done)
             self.lives = lives
 
             if done:
@@ -82,7 +84,7 @@ class Game:
         self.obstack[..., 3:] = obs
         self.rewards = []
 
-        self.lives = 3
+        self.lives = 2
 
         return self.obstack
 

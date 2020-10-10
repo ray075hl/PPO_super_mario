@@ -8,7 +8,7 @@ from gym_super_mario_bros.actions import COMPLEX_MOVEMENT
 
 if __name__ == '__main__':
     obs_size = 84
-    game_id = 'SuperMarioBrosNoFrameskip-1-1-v0'
+    game_id = "SuperMarioBros-v0"
     player = Agent((4, 84, 84), len(COMPLEX_MOVEMENT))
 
     if len(sys.argv) < 2:
@@ -25,5 +25,5 @@ if __name__ == '__main__':
             print('Usage: \tpython run.py train \n'
                   '\t\tpython run.py play model_path')
             exit()
-        env = Game(game_id, obs_size, mode=sys.argv[1])
-        player.play(sys.argv[2], env)
+    env = Game(game_id, obs_size, mode='play')
+    player.play('./checkpoint/mario_10000-best.dat', env)

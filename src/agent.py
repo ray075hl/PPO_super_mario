@@ -14,8 +14,8 @@ import src.utils as utils
 
 
 is_cuda = torch.cuda.is_available()
-device = 'cuda' if is_cuda else 'cpu'
-
+# device = 'cuda' if is_cuda else 'cpu'
+device = 'cpu'
 
 class Net(nn.Module):
     def __init__(self, input_shape, n_actions):
