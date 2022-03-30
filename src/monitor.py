@@ -14,7 +14,7 @@ else:
 class Monitor:
     def __init__(self, width, height, save_path='./saved_video/output_video.mp4'):
         
-        self.command = [ "D://Program Files//ffmpeg//bin//ffmpeg.exe",
+        self.command = [ FFMPEG_BIN,
                 '-y', # (optional) overwrite output file if it exists
                 '-f', 'rawvideo',
                 '-vcodec','rawvideo',
